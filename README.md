@@ -1495,3 +1495,154 @@ Validation data에 대하여 생성된 모델 중 Accuracy가 93.28, R2가 0.92,
 | ANN  |  93.28   | 0.92 | 0.91  | 43.53 | 7.92  |
 
 MLR, ML, ANN 모델을 평가지표로 비교하였다. ANN 모델이 MLR 모델보다 2.65, ML 모델보다 1.88 향상된 Accuracy를 보였다. Adjusted R2에서도 ANN 모델이 MLR과 ML보다 각각 0.10, 0.07 향상되었다. 평가지표를 비교하였을때 ANN 모델이 MLR, ML보다 성능이 향상됨을 보였다.
+
+# 8. 일본 추정식 (1)의 변수를 활용한 분석
+일본 추정식(1)의 변수(CH4/CO2, 체중, DMI, ECM)을 활용하여 분석을 진행하였다.
+
+## 8-1 기술통계량 확인
+문서 내 [2. Data importing](#기술통계량)에서의 기술통계량과 동일하다.
+
+## 8-2 이상치 확인
+문서 내 [3. 이상치 확인](#3-이상치-확인)과 동일하게 진행되었다. 변수별 이상치를 확인하였으나 따로 이상치 제거는 진행하지 않았다.
+
+## 8-3 데이터 정규화
+문서 내 [4. Nomralization](#4-데이터-정규화)와 동일하게 진행되었다.
+
+## 8-4 Feature selection
+변수는 4가지를 선택하여 진행하였기 때문에 변수간 Correlation과 Vif score만 확인하였다.
+
+### 8-4-1 Pearson's correlation matrix
+문서 내 [5-1. Pearsons correlation matrix](#5-1-pearsons-correlation-matrix)와 동일하게 진행되었다.
+
+### 8-4-2 VIF score analysis
+4가지 독립변수(CH4/CO2, 체중, DMI, ECM)와 관련하여 VIF score anlaysis를 진행하였다. DMI에 대한 VIF score가 10.75로 10보다 크게 나타나 다중공선성을 위배하였다고 판단되었다. 따로 변수를 제거하지 않고 이후 분석을 진행하였다.
+
+|Features|VIF Score|
+|--------|---------|
+|CH4/CO2 ratio|5.29|
+|체중|4.20|
+|DMI(kg/d)|10.75|
+|ECM|9.54|
+
+## 8-5 결측치 제거
+결측치가 존재하는 인덱스를 제거하였다. 결측치를 제거한 후 346개의 데이터가 확인되었다.
+<pre><code>#결측치 제거
+df_na_1 = nor_df.dropna(axis=0).reset_index(drop=True)
+print(df_na_1.describe())
+x_1 = df_na_1.drop(columns = ['CH4(L/d)'], axis = 1)
+print(x_1.describe())
+y_1 = df_na_1[['CH4(L/d)']]
+</code></pre>
+
+## 8-6 데이터 split
+데이터 split은 8:2로 진행하였으며, random_state는 42로 지정하였다
+<pre><code>
+x_train_2, x_test_2, y_train_2, y_test_2 = train_test_split(x_1, y_1, test_size = 0.2, random_state = 42)
+x_train_2 = x_train_2.reset_index(drop=True)
+y_train_2 = y_train_2.reset_index(drop=True)
+</code></pre>
+
+## 8-7 MLR 분석결과
+<pre><code>
+#MLR(machine learning x)
+def MLR(x, y):
+    model = LinearRegression()
+    model.fit(x, y)
+    
+    # Get coefficients and intercept
+    coefficients = model.coef_
+    intercept = model.intercept_
+    
+    MAPE = np.mean(100 * (np.abs(y-model.predict(x))/y))
+    accuracy = 100 - MAPE
+    # Calculating RMSE
+    y_pred = model.predict(x)
+    rmse = np.sqrt(np.mean((y - y_pred)**2))
+    # Calculating Relative RMSE
+    relative_rmse = (rmse / np.mean(y))*100
+    # Calculating R-squared
+    r2 = r2_score(y, y_pred)
+    # Calculating adj-R2
+    adj_r2 = 1 - (1-r2)*(len(x)-1)/(len(x)-x.shape[1]-1)
+    # Printing the results of the current fold iteration
+    print('Coefficient:', coefficients)
+    print('Intercept:', intercept)
+    print('Accuracy:', accuracy, 'RMSE', rmse, 'RRMSE', relative_rmse, 'r2', r2, 'adj_r2', adj_r2)
+
+MLR_2 = MLR(x_1,y_1)
+</code></pre>
+
+### MLR 분석결과
+MLR 분석결과 Accuracy 90.72, RMSE 62.08, RRMSE 11.90, R2 0.81, AdjR2 0.81가 확인되었다.
+|모델|Accuracy|RMSE|RRMSE|R2|Adjr2|
+|----|--------|----|-----|--|-----|
+|CH4(L/d)= 81.45 +778.214 CH4/CO2 +80.15 체중 +43.78 DMI +81.86 ECM|90.72|62.08|11.90|0.81|0.81|
+
+## 8-8 ML 분석결과
+<pre><code>
+def Multiple(x_train, y_train, x_test, y_test, k_fold=10):
+    SearchResultsData=pd.DataFrame()
+    # Create MLR model
+    model = LinearRegression()
+     # Perform k-fold cross validation
+    kf = KFold(n_splits=k_fold, shuffle=True, random_state = 42)
+    fold_number = 1
+    for train_index, val_index in kf.split(x_train):
+        X_train_fold, X_val_fold = x_train.loc[train_index], x_train.loc[val_index]
+        Y_train_fold, Y_val_fold = y_train.loc[train_index], y_train.loc[val_index]
+        
+        # Fitting MLR to the Training set
+        model.fit(X_train_fold, Y_train_fold)
+        
+        # Get coefficients and intercept
+        coefficients = model.coef_
+        intercept = model.intercept_
+        
+        MAPE_val = np.mean(100 * (np.abs(Y_val_fold-model.predict(X_val_fold))/Y_val_fold))
+        MAPE = np.mean(100 * (np.abs(y_test-model.predict(x_test))/y_test))
+        accuracy_val = 100 - MAPE_val
+        accuracy = 100 - MAPE
+        # Calculating RMSE
+        y_pred_val = model.predict(X_val_fold)
+        y_pred = model.predict(x_test)
+        rmse_val = np.sqrt(np.mean((Y_val_fold - y_pred_val)**2))
+        rmse = np.sqrt(np.mean((y_test - y_pred)**2))
+        # Calculating Relative RMSE
+        relative_rmse_val = (rmse_val / np.mean(Y_val_fold))*100
+        relative_rmse = (rmse / np.mean(y_test))*100
+        # Calculating R-squared
+        r2_val = r2_score(Y_val_fold, y_pred_val)
+        r2_test = r2_score(y_test, y_pred)
+        # Calculating adj-R2
+        adj_r2_val = 1 - (1-r2_val)*(len(X_val_fold)-1)/(len(X_val_fold)-X_val_fold.shape[1]-1)
+        adj_r2_test = 1 - (1-r2_test)*(len(x_test)-1)/(len(x_test)-x_test.shape[1]-1)
+        # Printing the results of the current fold iteration
+        print('Fold:', fold_number)
+        print('Coefficient:', coefficients)
+        print('Intercept:', intercept)
+        print('Accuracy_val:', accuracy_val,'accuracy_test',accuracy, 'RMSE_val:', rmse_val, 'RRMSE_val',relative_rmse_val, 
+              'RMSE_test',rmse,'RRMSE_test',relative_rmse,'R2_val',r2_val,'r2_test',r2_test,'adjr2_val',adj_r2_val,'adjr2_test',adj_r2_test)
+        fold_number += 1
+        # Appending the results to the dataframe
+        SearchResultsData = pd.concat([SearchResultsData,
+                                       pd.DataFrame(data=[[fold_number,coefficients, intercept, accuracy_val, accuracy, rmse_val,
+                                                           relative_rmse_val, rmse, relative_rmse, r2_val, r2_test,adj_r2_val,adj_r2_test]],
+                                                    columns=['Fold', 'Coefficients', 'intercept', 'Accuracy_val', 'Accuracy_test', 'RMSE_val',
+                                                             'RRMSE_val', 'RMSE_test', 'RRMSE_test','r2_val','r2_test','adjr2_val','adjr2_test'])])
+    
+    return(SearchResultsData)
+
+ML_2 = Multiple(x_train_2, y_train_2, x_test_2, y_test_2, k_fold=10)
+ML_2.to_excel('CH4_ML2.xlsx', index=False)
+</code></pre>
+
+### ML 분석결과(Validation data)
+![image](https://github.com/inpyo03/methane_ANN_modeling/assets/160727249/e42842bb-17b3-4bc3-8d31-c484dfe69e90)
+
+### ML 분석결과(Test data)
+![image](https://github.com/inpyo03/methane_ANN_modeling/assets/160727249/02ded89f-3d51-42c1-b45d-b7727a56fa9d)
+
+
+## ANN 결과정리
+![image](https://github.com/inpyo03/methane_ANN_modeling/assets/160727249/859540cd-cd83-43f1-be78-06b90c032871)
+
